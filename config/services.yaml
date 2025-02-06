@@ -1,18 +1,12 @@
 # This file is the entry point to configure your own services.
 # Files in the packages/ subdirectory configure your dependencies.
 
-# Put parameters here that don't need to change on each machine where the app is deployed
-# https://symfony.com/doc/current/best_practices.html#use-parameters-for-application-configuration
-parameters:
-
+# General service configuration
 services:
-    # default configuration for services in *this* file
     _defaults:
-        autowire: true      # Automatically injects dependencies in your services.
-        autoconfigure: true # Automatically registers your services as commands, event subscribers, etc.
+        autowire: true       # Enables automatic dependency injection
+        autoconfigure: true  # Automatically registers services (commands, event listeners, etc.)
 
-    # makes classes in src/ available to be used as services
-    # this creates a service per class whose id is the fully-qualified class name
     App\:
         resource: '../src/'
         exclude:
@@ -20,5 +14,43 @@ services:
             - '../src/Entity/'
             - '../src/Kernel.php'
 
-    # add more service definitions when explicit configuration is needed
-    # please note that last definitions always *replace* previous ones
+    # Logger service specifically for command chaining
+    monolog.logger.command_chain:
+        class: Monolog\Logger
+        arguments: [ 'command_chain' ]
+        calls:
+            - [ pushHandler, [ '@monolog.handler.command_chain' ] ]
+
+    # Log handler to write logs to a dedicated file
+    monolog.handler.command_chain:
+        class: Monolog\Handler\StreamHandler
+        arguments: [ '%kernel.logs_dir%/command_chain.log', 'info' ]
+        calls:
+            - [ setFormatter, [ '@monolog.formatter.command_chain' ] ]
+
+    # Log formatter for command chain logs
+    monolog.formatter.command_chain:
+        class: Monolog\Formatter\LineFormatter
+        arguments:
+            - "[%%datetime%%] %%message%%\n"  # Log format
+            - "Y-m-d H:i:s"  # Date format
+
+    # Service definition for FooCommand
+    App\FooBundle\Command\FooCommand:
+        arguments:
+            $logger: '@monolog.logger.command_chain'
+        tags: [ 'console.command' ]
+
+    # Service definition for BarCommand
+    App\BarBundle\Command\BarCommand:
+        arguments:
+            $logger: '@monolog.logger.command_chain'
+        tags: [ 'console.command' ]
+
+    # Event listener for handling command chaining logic
+    App\ChainCommandBundle\EventListener\CommandChainListener:
+        arguments:
+            $logger: '@monolog.logger.command_chain'
+            $application: '@console.messenger.application'
+        tags:
+            - { name: kernel.event_subscriber }
